@@ -7,7 +7,7 @@
         from account
         where id = #{id}
     </select>
-    <update id="updateDeposit" keyProperty="id" parameterType="com.cloud.demo.model.Account">
+    <update id="updateDepositWithVersion" keyProperty="id" parameterType="com.cloud.demo.model.Account">
         update account
         set deposit=#{deposit},
             version = version + 1
@@ -20,7 +20,7 @@
         where id = #{id} for
         update
     </select>
-    <update id="updateDepositPessimistic" keyProperty="id" parameterType="com.cloud.demo.model.Account">
+    <update id="updateDeposit" keyProperty="id" parameterType="com.cloud.demo.model.Account">
         update account
         set deposit=#{deposit}
         where id = #{id}

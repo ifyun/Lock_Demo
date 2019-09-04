@@ -2,11 +2,10 @@ package com.cloud.demo.model;
 
 import lombok.Data;
 
-import java.io.Serializable;
 import java.math.BigDecimal;
 
 @Data
-public class Account implements Serializable {
+public class Account {
     private int id;
     private BigDecimal deposit;
     private int version;

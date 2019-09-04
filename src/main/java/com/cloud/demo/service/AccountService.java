@@ -64,8 +64,8 @@ public class AccountService {
         from.setDeposit(from.getDeposit().subtract(value));
         to.setDeposit(to.getDeposit().add(value));
 
-        accountMapper.updateDepositPessimistic(from);
-        accountMapper.updateDepositPessimistic(to);
+        accountMapper.updateDeposit(from);
+        accountMapper.updateDeposit(to);
 
         return Result.SUCCESS;
     }
@@ -94,11 +94,11 @@ public class AccountService {
 
         // 先锁 id 较大的那行，避免死锁
         if (from.getId() > to.getId()) {
-            r1 = accountMapper.updateDeposit(from);
-            r2 = accountMapper.updateDeposit(to);
+            r1 = accountMapper.updateDepositWithVersion(from);
+            r2 = accountMapper.updateDepositWithVersion(to);
         } else {
-            r2 = accountMapper.updateDeposit(to);
-            r1 = accountMapper.updateDeposit(from);
+            r2 = accountMapper.updateDepositWithVersion(to);
+            r1 = accountMapper.updateDepositWithVersion(from);
         }
 
         if (r1 < 1 || r2 < 1) {

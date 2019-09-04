@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 public interface AccountMapper {
     Account selectById(int id);
     Account selectByIdForUpdate(int id);
-    int updateDeposit(Account account);
-    void updateDepositPessimistic(Account account);
+    int updateDepositWithVersion(Account account);
+    void updateDeposit(Account account);
     BigDecimal getTotalDeposit();
 }
