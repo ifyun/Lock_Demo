@@ -1,6 +1,7 @@
 package com.cloud.demo.service;
 
 import com.cloud.demo.mapper.AccountMapper;
+import javafx.util.Pair;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,7 +27,7 @@ import static java.lang.System.currentTimeMillis;
 class AccountServiceTest {
 
     // 并发数
-    private static final int COUNT = 1000;
+    private static final int COUNT = 500;
 
     @Resource
     AccountMapper accountMapper;
@@ -36,10 +37,22 @@ class AccountServiceTest {
 
     private CountDownLatch latch = new CountDownLatch(COUNT);
     private List<Thread> transferThreads = new ArrayList<>();
+    private List<Pair<Integer, Integer>> transferAccounts = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
+        Random random = new Random(currentTimeMillis());
         transferThreads.clear();
+        transferAccounts.clear();
+
+        for (int i = 0; i < COUNT; i++) {
+            int from = random.nextInt(10) + 1;
+            int to;
+            do{
+                to = random.nextInt(10) + 1;
+            } while (from == to);
+            transferAccounts.add(new Pair<>(from, to));
+        }
     }
 
     /**
@@ -47,7 +60,7 @@ class AccountServiceTest {
      */
     @Test
     void transferByPessimisticLock() throws Throwable {
-        for (int i = 1; i <= COUNT; i++) {
+        for (int i = 0; i < COUNT; i++) {
             transferThreads.add(new Transfer(i, true));
         }
         for (Thread t : transferThreads) {
@@ -55,10 +68,8 @@ class AccountServiceTest {
         }
         latch.await();
 
-        BigDecimal a = accountMapper.selectByIdB(1).getDeposit(),
-                b = accountMapper.selectByIdB(2).getDeposit();
-
-        Assertions.assertEquals(a.add(b), BigDecimal.valueOf(2000).setScale(2, RoundingMode.HALF_UP));
+        Assertions.assertEquals(accountMapper.getTotalDeposit(),
+                BigDecimal.valueOf(10000).setScale(2, RoundingMode.HALF_UP));
     }
 
     /**
@@ -66,7 +77,7 @@ class AccountServiceTest {
      */
     @Test
     void transferByOptimisticLock() throws Throwable {
-        for (int i = 1; i <= COUNT; i++) {
+        for (int i = 0; i < COUNT; i++) {
             transferThreads.add(new Transfer(i, false));
         }
         for (Thread t : transferThreads) {
@@ -74,24 +85,20 @@ class AccountServiceTest {
         }
         latch.await();
 
-        BigDecimal a = accountMapper.selectById(1).getDeposit(),
-                b = accountMapper.selectById(2).getDeposit();
-
-        Assertions.assertEquals(a.add(b), BigDecimal.valueOf(2000).setScale(2, RoundingMode.HALF_UP));
+        Assertions.assertEquals(accountMapper.getTotalDeposit(),
+                BigDecimal.valueOf(10000).setScale(2, RoundingMode.HALF_UP));
     }
 
+    /**
+     * 转账线程
+     */
     class Transfer extends Thread {
         int index;
         boolean isPessimistic;
-        int[] id = {1, 2};
 
         Transfer(int i, boolean b) {
             index = i;
             isPessimistic = b;
-            if (index % 2 == 0) {
-                id[0] = 2;
-                id[1] = 1;
-            }
         }
 
         @Override
@@ -99,16 +106,24 @@ class AccountServiceTest {
             BigDecimal value = BigDecimal.valueOf(
                     new Random(currentTimeMillis()).nextFloat() * 100
             ).setScale(2, RoundingMode.HALF_UP);
-            int result;
-            if (isPessimistic) {
-                result = accountService.transferPessimistic(id[0], id[1], value);
-            } else {
-               result= accountService.transferOptimistic(id[0], id[1], value);
+
+            AccountService.Result result = AccountService.Result.FAILED;
+            int fromId = transferAccounts.get(index).getKey(),
+                    toId = transferAccounts.get(index).getValue();
+            try {
+                if (isPessimistic) {
+                    result = accountService.transferPessimistic(fromId, toId, value);
+                } else {
+                    result = accountService.transferOptimistic(fromId, toId, value);
+                }
+            } catch (Exception e) {
+                log.error(e.getMessage());
+            } finally {
+                if (result == AccountService.Result.SUCCESS) {
+                    log.info(String.format("Transfer %f from %d to %d success", value, fromId, toId));
+                }
+                latch.countDown();
             }
-            if (result == 1) {
-                log.info(String.format("Transfer %f from %d to %d success", value, id[0],id[1]));
-            }
-            latch.countDown();
         }
     }
 }

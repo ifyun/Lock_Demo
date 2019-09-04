@@ -14,15 +14,18 @@
         where id = #{id}
           and version = #{version}
     </update>
-    <select id="selectByIdB" resultType="com.cloud.demo.model.Account">
+    <select id="selectByIdForUpdate" resultType="com.cloud.demo.model.Account">
         select *
-        from account_b
+        from account
         where id = #{id} for
         update
     </select>
-    <update id="updateDepositB" keyProperty="id" parameterType="com.cloud.demo.model.Account">
-        update account_b
+    <update id="updateDepositPessimistic" keyProperty="id" parameterType="com.cloud.demo.model.Account">
+        update account
         set deposit=#{deposit}
         where id = #{id}
     </update>
+    <select id="getTotalDeposit" resultType="java.math.BigDecimal">
+        select sum(deposit) from account;
+    </select>
 </mapper>

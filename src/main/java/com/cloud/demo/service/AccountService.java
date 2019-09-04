@@ -1,5 +1,7 @@
 package com.cloud.demo.service;
 
+import com.cloud.demo.annotation.Retry;
+import com.cloud.demo.exceptiom.RetryException;
 import com.cloud.demo.mapper.AccountMapper;
 import com.cloud.demo.model.Account;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +18,12 @@ import java.util.function.BiPredicate;
 @Service
 public class AccountService {
 
+    public enum Result{
+        SUCCESS,
+        DEPOSIT_NOT_ENOUGH,
+        FAILED,
+    }
+
     @Resource
     private AccountMapper accountMapper;
 
@@ -29,53 +37,54 @@ public class AccountService {
      * @param value  金额
      */
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public int transferPessimistic(int fromId, int toId, BigDecimal value) {
+    public Result transferPessimistic(int fromId, int toId, BigDecimal value) {
         Account from, to;
 
         try {
             // 先锁 id 较大的那行，避免死锁
             if (fromId > toId) {
-                from = accountMapper.selectByIdB(fromId);
-                to = accountMapper.selectByIdB(toId);
+                from = accountMapper.selectByIdForUpdate(fromId);
+                to = accountMapper.selectByIdForUpdate(toId);
             } else {
-                to = accountMapper.selectByIdB(toId);
-                from = accountMapper.selectByIdB(fromId);
+                to = accountMapper.selectByIdForUpdate(toId);
+                from = accountMapper.selectByIdForUpdate(fromId);
             }
         } catch (Exception e) {
             log.error(e.getMessage());
             TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
-            return 0;
+            return Result.FAILED;
         }
 
         if (!isDepositEnough.test(from.getDeposit(), value)) {
             TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
-            return -1;
+            log.info(String.format("Account %d is not enough.", fromId));
+            return Result.DEPOSIT_NOT_ENOUGH;
         }
 
         from.setDeposit(from.getDeposit().subtract(value));
         to.setDeposit(to.getDeposit().add(value));
 
-        accountMapper.updateDepositB(from);
-        accountMapper.updateDepositB(to);
+        accountMapper.updateDepositPessimistic(from);
+        accountMapper.updateDepositPessimistic(to);
 
-        return  1;
+        return Result.SUCCESS;
     }
 
     /**
      * 转账操作，乐观锁
-     *
-     * @param fromId 扣款账户
+     *  @param fromId 扣款账户
      * @param toId   收款账户
      * @param value  金额
      */
+    @Retry
     @Transactional(isolation = Isolation.REPEATABLE_READ)
-    public int transferOptimistic(int fromId, int toId, BigDecimal value) {
+    public Result transferOptimistic(int fromId, int toId, BigDecimal value) {
         Account from = accountMapper.selectById(fromId),
                 to = accountMapper.selectById(toId);
 
         if (!isDepositEnough.test(from.getDeposit(), value)) {
             TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
-            return -1;
+            return Result.DEPOSIT_NOT_ENOUGH;
         }
 
         from.setDeposit(from.getDeposit().subtract(value));
@@ -93,11 +102,10 @@ public class AccountService {
         }
 
         if (r1 < 1 || r2 < 1) {
-            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
-            TransactionAspectSupport.currentTransactionStatus().flush();
-            return 0;
+            // 失败，抛出重试异常，执行重试
+            throw new RetryException("Transfer failed, retry.");
         } else {
-            return 1;
+            return Result.SUCCESS;
         }
     }
 }
